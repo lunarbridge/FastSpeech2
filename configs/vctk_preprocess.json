@@ -1,6 +1,7 @@
 {
-  "in_dir": "data/fastspeech2/vctk",
-  "out_dir": "data/fastspeech2/vctk-pre",
+  "input_path": "./before-align",
+  "input_textgrid_path": "./aligned",
+  "output_path": "./preprocessed",
 
   "audio_params": {
     "sample_rate": 22050,
