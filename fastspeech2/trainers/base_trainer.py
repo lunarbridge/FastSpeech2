@@ -1,24 +1,23 @@
+from typing import Dict, Tuple
+
 import torch
 import torch.nn as nn
-from typing import Tuple, Dict
-from collections import defaultdict
-
-from pytorch_sound.trainer import LogType, Trainer
-from pytorch_sound.utils.tensor import to_device
-from pytorch_sound.utils.calculate import db2log
-from pytorch_sound.settings import MIN_DB
-from fastspeech2.utils.tools import to_device, log
 from fastspeech2.models.loss import FastSpeech2Loss
+from fastspeech2.utils.tools import to_device
+from pytorch_sound.settings import MIN_DB
+from pytorch_sound.trainer import LogType, Trainer
+# from pytorch_sound.utils.tensor import to_device
+from pytorch_sound.utils.calculate import db2log
 from speech_interface.interfaces.hifi_gan import InterfaceHifiGAN
 
 
 class BaseTrainer(Trainer):
-
     def __init__(self, model: nn.Module,
                  optimizer, train_dataset, valid_dataset,
-                 max_step: int, valid_max_step: int, save_interval: int, log_interval: int,
+                 save_interval: int, log_interval: int,
                  pitch_feature: str, energy_feature: str,
                  save_dir: str, save_prefix: str = '',
+                 max_step: int = 0, valid_max_step: int = 0,
                  grad_clip: float = 0.0, grad_norm: float = 0.0,
                  sr: int = 22050, pretrained_path: str = None, scheduler: torch.optim.lr_scheduler._LRScheduler = None,
                  seed: int = 2021, is_reference: bool = False):
@@ -94,60 +93,3 @@ class BaseTrainer(Trainer):
             for group in iterable:
                 for x in group:
                     yield to_device(x, 'cuda')
-
-    def train(self, step: int) -> torch.Tensor:
-
-        # update model
-        self.optimizer.zero_grad()
-
-        # flag for logging
-        log_flag = step % self.log_interval == 0
-
-        # forward model
-        loss, meta = self.forward(*next(self.train_dataset), is_logging=log_flag)
-
-        # check loss nan
-        if loss != loss:
-            log('{} cur step NAN is occured'.format(step))
-            return
-
-        loss.backward()
-        self.clip_grad()
-        self.optimizer.step()
-
-        if self.scheduler is not None:
-            self.scheduler.step()
-
-        # logging
-        if log_flag:
-            # console logging
-            self.console_log('train', meta, step)
-            try:
-                # tensorboard logging
-                self.tensorboard_log('train', meta, step)
-            except OverflowError:
-                pass
-
-    def run(self):
-        try:
-            # training loop
-            for i in range(self.step + 1, self.max_step + 1):
-
-                # update step
-                self.step = i
-
-                # logging
-                if i % self.save_interval == 1:
-                    log('------------- TRAIN step : %d -------------' % i)
-
-                # do training step
-                self.model.train()
-                self.train(i)
-
-                # save model
-                if i % self.save_interval == 0:
-                    # save model checkpoint file
-                    self.save(i)
-
-        except KeyboardInterrupt:
-            log('Train is canceled !!')

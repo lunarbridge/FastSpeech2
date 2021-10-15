@@ -1,19 +1,20 @@
+import glob
+import json
 import os
 import random
-import json
+from multiprocessing import cpu_count
+from typing import Any, Dict
+
 import librosa
 import numpy as np
 import pyworld as pw
 import tgt
 import torch
-import glob
-from multiprocessing import cpu_count
-from typing import Any, Dict
 from joblib import Parallel, delayed
 from scipy.interpolate import interp1d
 from sklearn.preprocessing import StandardScaler
-from tqdm import tqdm
 from speech_interface.encoders import MelSpectrogram
+from tqdm import tqdm
 
 
 def remove_outlier(values):
@@ -82,7 +83,7 @@ def get_alignment(tier, sample_rate, hop_size):
     return phones, durations, start_time, end_time
 
 
-def process_utterance(in_dir, out_dir, speaker, basename, sample_rate, hop_size, stft_func,
+def process_utterance(in_dir, textgrid_path, out_dir, speaker, basename, sample_rate, hop_size, stft_func,
                       pitch_phoneme_averaging, energy_phoneme_averaging):
     wav_path = os.path.join(in_dir, speaker, '{}.wav'.format(basename))
     text_path = os.path.join(in_dir, speaker, '{}.lab'.format(basename))
@@ -90,7 +91,7 @@ def process_utterance(in_dir, out_dir, speaker, basename, sample_rate, hop_size,
     #     out_dir, 'TextGrid', speaker, '{}.TextGrid'.format(basename)
     # )
     tg_path = os.path.join(
-        out_dir, speaker, '{}.TextGrid'.format(basename)
+        textgrid_path, speaker, '{}.TextGrid'.format(basename)
     )
 
     # Get alignments
@@ -189,20 +190,21 @@ def process_utterance(in_dir, out_dir, speaker, basename, sample_rate, hop_size,
 
 
 class Preprocessor:
-    def __init__(self, in_dir: str, out_dir: str, validation_rate: float, audio_params: Dict[str, Any],
+    def __init__(self, input_path: str, input_textgrid_path: str, output_path: str, validation_rate: float, audio_params: Dict[str, Any],
                  pitch_feature: str = 'phoneme_level', energy_feature: str = 'phoneme_level',
                  pitch_norm: bool = True, energy_norm: bool = True, sample_rate: int = 22050,
                  ):
-        self.in_dir = in_dir
-        self.out_dir = out_dir
+        self.input_path = input_path
+        self.input_textgrid_path = input_textgrid_path
+        self.output_path = output_path
         self.validation_rate = validation_rate
         self.sample_rate = sample_rate
         self.sample_rate = audio_params['sample_rate']
         self.hop_size = audio_params['hop_size']
 
         # check unaligned
-        wavs = glob.glob(f'{in_dir}/**/*.wav', recursive=True)
-        grids = glob.glob(f'{out_dir}/**/*.TextGrid', recursive=True)
+        wavs = glob.glob(f'{input_path}/**/*.wav', recursive=True)
+        grids = glob.glob(f'{input_textgrid_path}/**/*.TextGrid', recursive=True)
         wavs = [os.path.basename(f).split('.')[0] for f in wavs]
         grids = [os.path.basename(f).split('.')[0] for f in grids]
         self.unaligned_list = list(set(wavs).difference(set(grids)))
@@ -224,10 +226,10 @@ class Preprocessor:
         self.stft_func = MelSpectrogram(**audio_params)
 
     def build_from_path(self):
-        os.makedirs((os.path.join(self.out_dir, 'mel')), exist_ok=True)
-        os.makedirs((os.path.join(self.out_dir, 'pitch')), exist_ok=True)
-        os.makedirs((os.path.join(self.out_dir, 'energy')), exist_ok=True)
-        os.makedirs((os.path.join(self.out_dir, 'duration')), exist_ok=True)
+        os.makedirs((os.path.join(self.output_path, 'mel')), exist_ok=True)
+        os.makedirs((os.path.join(self.output_path, 'pitch')), exist_ok=True)
+        os.makedirs((os.path.join(self.output_path, 'energy')), exist_ok=True)
+        os.makedirs((os.path.join(self.output_path, 'duration')), exist_ok=True)
 
         print('Processing Data ...')
         out = list()
@@ -240,17 +242,17 @@ class Preprocessor:
 
         with Parallel(n_jobs=cpu_count() - 1) as parallel:
 
-            for i, speaker in enumerate(tqdm(os.listdir(self.in_dir))):
+            for i, speaker in enumerate(tqdm(os.listdir(self.input_path))):
                 speakers[speaker] = i
 
                 basenames = [os.path.basename(wav_name).split('.')[0] for wav_name
-                             in os.listdir(os.path.join(self.in_dir, speaker))
+                             in os.listdir(os.path.join(self.input_path, speaker))
                              if wav_name.endswith('.wav')]
                 if self.unaligned_list:
                     basenames = [name for name in basenames if name not in self.unaligned_list]
                 results = parallel(
                     delayed(process_utterance)
-                    (self.in_dir, self.out_dir, speaker, basename, self.sample_rate, self.hop_size, self.stft_func,
+                    (self.input_path, self.input_textgrid_path, self.output_path, speaker, basename, self.sample_rate, self.hop_size, self.stft_func,
                      self.pitch_phoneme_averaging, self.energy_phoneme_averaging)
                     for basename in basenames
                 )
@@ -283,17 +285,17 @@ class Preprocessor:
             energy_std = 1
 
         pitch_min, pitch_max = normalize(
-            os.path.join(self.out_dir, 'pitch'), pitch_mean, pitch_std
+            os.path.join(self.output_path, 'pitch'), pitch_mean, pitch_std
         )
         energy_min, energy_max = normalize(
-            os.path.join(self.out_dir, 'energy'), energy_mean, energy_std
+            os.path.join(self.output_path, 'energy'), energy_mean, energy_std
         )
 
         # Save files
-        with open(os.path.join(self.out_dir, 'speakers.json'), 'w') as f:
+        with open(os.path.join(self.output_path, 'speakers.json'), 'w') as f:
             f.write(json.dumps(speakers))
 
-        with open(os.path.join(self.out_dir, 'stats.json'), 'w') as f:
+        with open(os.path.join(self.output_path, 'stats.json'), 'w') as f:
             stats = {
                 'pitch': [
                     float(pitch_min),
@@ -321,10 +323,10 @@ class Preprocessor:
         val_size = int(self.validation_rate * len(out))
 
         # Write metadata
-        with open(os.path.join(self.out_dir, 'train.txt'), 'w', encoding='utf-8') as f:
+        with open(os.path.join(self.output_path, 'train.txt'), 'w', encoding='utf-8') as f:
             for m in out[val_size:]:
                 f.write(m + '\n')
-        with open(os.path.join(self.out_dir, 'val.txt'), 'w', encoding='utf-8') as f:
+        with open(os.path.join(self.output_path, 'val.txt'), 'w', encoding='utf-8') as f:
             for m in out[:val_size]:
                 f.write(m + '\n')
 
