@@ -95,7 +95,7 @@ class Evaluator(BaseTrainer):
 
             curr_loss = self.validate(checkpoint['step'])
 
-            checkpoint_relpath = os.path.relpath(checkpoint_path, self.current_data_path)
-            checkpoint_stats[checkpoint_relpath] = float(curr_loss)
+            # checkpoint_relpath = os.path.relpath(checkpoint_path, self.current_data_path)
+            checkpoint_stats[checkpoint_path] = float(curr_loss)
 
         return checkpoint_stats
