@@ -67,7 +67,8 @@ class Trainer(BaseTrainer):
 
 
     def run(self):
-        for i in range(self.step + 1, self.max_step + 1):
+        train_max_step = self.step + self.max_step
+        for i in range(self.step + 1, train_max_step + 1):
 
             # update step
             self.step = i
