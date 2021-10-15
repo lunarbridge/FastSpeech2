@@ -1,5 +1,6 @@
 import glob
 import os
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -68,6 +69,8 @@ class Evaluator(BaseTrainer):
         # tensor board logging of scalar stat
         for key, value in stat.items():
             self.writer.add_scalar('valid/{}'.format(key), value, global_step=step)
+
+        return loss
  
 
     @staticmethod
@@ -79,12 +82,9 @@ class Evaluator(BaseTrainer):
 
 
     def run(self):
-        if not self.pretrained_path:
-            raise AttributeError('pretrained path is not set')
-
         checkpoint_stats = dict()
 
-        check_files = glob.glob(os.path.join(self.pretrained_path, '*'))
+        check_files = glob.glob(f'{self.save_dir / "models" / self.save_name}' + "/*.chkpt")
         check_files = sorted(check_files, key=os.path.getctime)
 
         for checkpoint_path in check_files:
@@ -96,6 +96,8 @@ class Evaluator(BaseTrainer):
             curr_loss = self.validate(checkpoint['step'])
 
             # checkpoint_relpath = os.path.relpath(checkpoint_path, self.current_data_path)
-            checkpoint_stats[checkpoint_path] = float(curr_loss)
+            checkpoint_filename = os.path.basename(checkpoint_path)
+            checkpoint_relpath = Path('./saved-models/models') / self.save_name / checkpoint_filename
+            checkpoint_stats[str(checkpoint_relpath)] = float(curr_loss)
 
         return checkpoint_stats
