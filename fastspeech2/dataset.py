@@ -1,5 +1,7 @@
 import json
 import os
+from pathlib import Path
+from typing import List
 import numpy as np
 import torch
 from collections import defaultdict
@@ -8,42 +10,53 @@ from pytorch_sound.settings import MIN_DB
 from torch.utils.data import Dataset as TorchDataset
 from .text import text_to_sequence
 from .utils.tools import pad_1D, pad_2D
+import re
 
 
 class Dataset(TorchDataset):
     def __init__(
-        self, filename, preprocessed_path, text_cleaners, batch_size,
+        self, filename, preprocessed_paths: List, text_cleaners, batch_size,
             pitch_min: float, energy_min: float, sort=False, drop_last=False,
             mel_log_min: float = db2log(MIN_DB),
             is_reference: bool = False
     ):
-        self.preprocessed_path = preprocessed_path
+        # self.preprocessed_paths = preprocessed_paths
         self.cleaners = text_cleaners
         self.batch_size = batch_size
         self.mel_log_min = mel_log_min
         self.pitch_min = pitch_min
         self.energy_min = energy_min
         self.is_reference = is_reference
+        self.preprocessed_base_path = os.path.sep.join(preprocessed_paths[0].split(os.path.sep)[:-2])
+        # self.preprocessed_base_path = os.path.commonpath(preprocessed_paths)
 
-        self.basename, self.speaker, self.text, self.raw_text = self.process_meta(
-            filename
+        self.preprocessed_path_keys, self.speaker_map, self.basenames, self.speakers, self.texts, self.raw_texts = self.process_meta(
+            preprocessed_paths=preprocessed_paths, filename=filename,
         )
-        with open(os.path.join(self.preprocessed_path, 'speakers.json')) as f:
-            self.speaker_map = json.load(f)
+        self.preprocess_path = Path(preprocessed_paths[0]).stem
+        # with open(os.path.join(self.preprocessed_path, 'speakers.json')) as f:
+        #     self.speaker_map = json.load(f)
         self.sort = sort
         self.drop_last = drop_last
 
         if self.is_reference:
             self.file_spk_map = defaultdict(list)
-            for basename, spk in zip(self.basename, self.speaker):
+            for basename, spk in zip(self.basenames, self.speakers):
                 self.file_spk_map[spk].append(basename)
+
+
+    def _get_preprocessed_path_by_idx(self, idx):
+        return os.path.join(self.preprocessed_base_path, 
+                            self.preprocessed_path_keys[idx],
+                            self.preprocess_path)
+
 
     def get_ref_mel(self, idx):
         # target speaker
-        speaker = self.speaker[idx]
+        speaker = self.speakers[idx]
         ref_base_name = np.random.choice(self.file_spk_map[speaker], 1)[0]
         mel_path = os.path.join(
-            self.preprocessed_path,
+            self._get_preprocessed_path_by_idx(idx),
             'mel',
             '{}-mel-{}.npy'.format(speaker, ref_base_name),
         )
@@ -51,34 +64,36 @@ class Dataset(TorchDataset):
         return mel
 
     def __len__(self):
-        return len(self.text)
+        return len(self.texts)
 
     def __getitem__(self, idx):
-        basename = self.basename[idx]
-        speaker = self.speaker[idx]
+        basename = self.basenames[idx]
+        speaker = self.speakers[idx]
         speaker_id = self.speaker_map[speaker]
-        raw_text = self.raw_text[idx]
-        phone = np.array(text_to_sequence(self.text[idx], self.cleaners))
+        raw_text = self.raw_texts[idx]
+        phone = np.array(text_to_sequence(self.texts[idx], self.cleaners))
+
+        preprocessed_path = self._get_preprocessed_path_by_idx(idx)
         mel_path = os.path.join(
-            self.preprocessed_path,
+            preprocessed_path,
             'mel',
             '{}-mel-{}.npy'.format(speaker, basename),
         )
         mel = np.load(mel_path)
         pitch_path = os.path.join(
-            self.preprocessed_path,
+            preprocessed_path,
             'pitch',
             '{}-pitch-{}.npy'.format(speaker, basename),
         )
         pitch = np.load(pitch_path)
         energy_path = os.path.join(
-            self.preprocessed_path,
+            preprocessed_path,
             'energy',
             '{}-energy-{}.npy'.format(speaker, basename),
         )
         energy = np.load(energy_path)
         duration_path = os.path.join(
-            self.preprocessed_path,
+            preprocessed_path,
             'duration',
             '{}-duration-{}.npy'.format(speaker, basename),
         )
@@ -99,21 +114,38 @@ class Dataset(TorchDataset):
             sample['ref_mel'] = self.get_ref_mel(idx)
         return sample
 
-    def process_meta(self, filename):
-        with open(
-            os.path.join(self.preprocessed_path, filename), 'r', encoding='utf-8'
-        ) as f:
-            name = []
-            speaker = []
-            text = []
-            raw_text = []
-            for line in f.readlines():
-                n, s, t, r = line.strip('\n').split('|')
-                name.append(n)
-                speaker.append(s)
-                text.append(t)
-                raw_text.append(r)
-            return name, speaker, text, raw_text
+    def process_meta(self, preprocessed_paths: List, filename):
+        """
+        return:
+        preprocessed_path_keys, speaker_map, names, speakers, texts, raw_texts
+        """
+        preprocess_path_key_regex = re.compile('\d{8}-\d{6}(-intermediate|)')
+        preprocessed_path_keys = []
+        names = []
+        speakers = []
+        texts = []
+        raw_texts = []
+
+        for preprocessed_path in preprocessed_paths:
+            preprocessed_path_key = re.search(preprocess_path_key_regex, 
+                                              preprocessed_path).group()
+            with open(
+                os.path.join(preprocessed_path, filename), 'r', encoding='utf-8'
+            ) as f:
+                for line in f.readlines():
+                    n, s, t, r = line.strip('\n').split('|')
+                    names.append(n)
+                    speakers.append(s)
+                    texts.append(t)
+                    raw_texts.append(r)
+
+                    preprocessed_path_keys.append(preprocessed_path_key)
+
+
+        speaker_map = {speaker: idx for idx, speaker in enumerate(sorted(set(speakers)))}
+        
+        return preprocessed_path_keys, speaker_map, names, speakers, texts, raw_texts
+
 
     def reprocess(self, data, idxs):
         ids = [data[idx]['id'] for idx in idxs]
