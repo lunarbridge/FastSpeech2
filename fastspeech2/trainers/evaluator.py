@@ -84,7 +84,7 @@ class Evaluator(BaseTrainer):
     def run(self):
         checkpoint_stats = dict()
 
-        check_files = glob.glob(f'{self.save_dir / "models" / self.save_name}' + "/*.chkpt")
+        check_files = glob.glob(os.path.join(self.save_dir, 'models', self.save_name, '*.chkpt'))
         check_files = sorted(check_files, key=os.path.getctime)
 
         for checkpoint_path in check_files:
