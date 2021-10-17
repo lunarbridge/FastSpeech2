@@ -10,6 +10,8 @@ from pytorch_sound.settings import MIN_DB
 from torch.utils.data import Dataset as TorchDataset
 from .text import text_to_sequence
 from .utils.tools import pad_1D, pad_2D
+from .utils.path import get_data_path_key
+
 import re
 
 
@@ -20,7 +22,6 @@ class Dataset(TorchDataset):
             mel_log_min: float = db2log(MIN_DB),
             is_reference: bool = False
     ):
-        # self.preprocessed_paths = preprocessed_paths
         self.cleaners = text_cleaners
         self.batch_size = batch_size
         self.mel_log_min = mel_log_min
@@ -28,14 +29,12 @@ class Dataset(TorchDataset):
         self.energy_min = energy_min
         self.is_reference = is_reference
         self.preprocessed_base_path = os.path.sep.join(preprocessed_paths[0].split(os.path.sep)[:-2])
-        # self.preprocessed_base_path = os.path.commonpath(preprocessed_paths)
 
         self.preprocessed_path_keys, self.speaker_map, self.basenames, self.speakers, self.texts, self.raw_texts = self.process_meta(
             preprocessed_paths=preprocessed_paths, filename=filename,
         )
         self.preprocess_path = Path(preprocessed_paths[0]).stem
-        # with open(os.path.join(self.preprocessed_path, 'speakers.json')) as f:
-        #     self.speaker_map = json.load(f)
+
         self.sort = sort
         self.drop_last = drop_last
 
@@ -119,7 +118,7 @@ class Dataset(TorchDataset):
         return:
         preprocessed_path_keys, speaker_map, names, speakers, texts, raw_texts
         """
-        preprocess_path_key_regex = re.compile('\d{8}-\d{6}(-intermediate|)')
+        # preprocess_path_key_regex = re.compile('\d{8}-\d{6}(-intermediate|)')
         preprocessed_path_keys = []
         names = []
         speakers = []
@@ -127,8 +126,9 @@ class Dataset(TorchDataset):
         raw_texts = []
 
         for preprocessed_path in preprocessed_paths:
-            preprocessed_path_key = re.search(preprocess_path_key_regex, 
-                                              preprocessed_path).group()
+            # preprocessed_path_key = re.search(preprocess_path_key_regex, 
+            #                                   preprocessed_path).group()
+            preprocessed_path_key = get_data_path_key(preprocessed_path)
             with open(
                 os.path.join(preprocessed_path, filename), 'r', encoding='utf-8'
             ) as f:
