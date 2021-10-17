@@ -1,18 +1,19 @@
 import json
 import os
+import re
+from collections import defaultdict
 from pathlib import Path
 from typing import List
+
 import numpy as np
 import torch
-from collections import defaultdict
-from pytorch_sound.utils.calculate import db2log
+from fs2_env.path import get_data_path_key
 from pytorch_sound.settings import MIN_DB
+from pytorch_sound.utils.calculate import db2log
 from torch.utils.data import Dataset as TorchDataset
+
 from .text import text_to_sequence
 from .utils.tools import pad_1D, pad_2D
-from .utils.path import get_data_path_key
-
-import re
 
 
 class Dataset(TorchDataset):
@@ -118,7 +119,6 @@ class Dataset(TorchDataset):
         return:
         preprocessed_path_keys, speaker_map, names, speakers, texts, raw_texts
         """
-        # preprocess_path_key_regex = re.compile('\d{8}-\d{6}(-intermediate|)')
         preprocessed_path_keys = []
         names = []
         speakers = []
@@ -126,8 +126,6 @@ class Dataset(TorchDataset):
         raw_texts = []
 
         for preprocessed_path in preprocessed_paths:
-            # preprocessed_path_key = re.search(preprocess_path_key_regex, 
-            #                                   preprocessed_path).group()
             preprocessed_path_key = get_data_path_key(preprocessed_path)
             with open(
                 os.path.join(preprocessed_path, filename), 'r', encoding='utf-8'
